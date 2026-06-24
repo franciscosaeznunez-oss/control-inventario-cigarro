@@ -371,12 +371,51 @@ tr:last-child td { border-bottom: none; }
   .grid-4 { grid-template-columns: repeat(2, 1fr); }
   .grid-3 { grid-template-columns: 1fr 1fr; }
   .grid-2 { grid-template-columns: 1fr; }
-  .main { padding: 12px; }
+  .main   { padding: 12px; }
   .header { padding: 10px 12px; }
-  .clock { font-size: 18px; }
+  .clock  { font-size: 18px; }
 }
 
 @media (max-width: 480px) {
-  .grid-4 { grid-template-columns: 1fr 1fr; }
-  .nav-btn { padding: 8px 10px; font-size: 12px; }
+  /* Header: dos filas apiladas */
+  .header       { flex-direction: column; gap: 8px; padding: 8px 12px; }
+  .header-left  { width: 100%; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }
+  .header-right { width: 100%; justify-content: space-between; align-items: center; gap: 8px; }
+  .logo         { font-size: 15px; }
+  .turno-badge  { font-size: 11px; padding: 3px 8px; }
+  .clock        { font-size: 15px; }
+
+  /* Nav: tabs iguales que llenan el ancho */
+  .nav     { padding: 0 4px; }
+  .nav-btn { flex: 1; justify-content: center; font-size: 11px; padding: 10px 4px; gap: 3px; }
+
+  /* Main */
+  .main { padding: 10px; }
+
+  /* Scanner box: input ocupa ancho completo, botones en fila debajo */
+  .scanner-box      { padding: 12px; margin-bottom: 14px; }
+  .scanner-box h2   { font-size: 13px; margin-bottom: 10px; }
+  .scanner-box form { flex-wrap: wrap; gap: 8px; }
+  .scanner-input    { width: 100%; flex: none; font-size: 15px; }
+
+  /* Grids */
+  .grid-4 { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .grid-3 { grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  /* Cards */
+  .card       { padding: 12px; }
+  .card-value { font-size: 20px; }
+  .card-title { font-size: 11px; }
+
+  /* Modales: bottom sheet desde abajo */
+  .modal-overlay      { padding: 0; align-items: flex-end; }
+  .modal              { border-radius: 16px 16px 0 0; padding: 20px 16px; max-height: 90vh; }
+  .modal-title        { font-size: 16px; }
+  .modal-actions      { flex-wrap: wrap; gap: 8px; }
+  .modal-actions .btn { flex: 1; min-width: 120px; justify-content: center; }
+
+  /* Sección y tabla */
+  .section-title     { font-size: 13px; }
+  .table-wrap        { font-size: 12px; }
+  table th, table td { padding: 8px 5px; }
 }
