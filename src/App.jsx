@@ -502,11 +502,12 @@ function ModuloInventario({ inventario, onScanInventario, onEditProduct, onDelet
 
 // ─── Módulo Ventas ────────────────────────────────────────────────────────────
 
-function ModuloVentas({ inventario, ventas, turnoActivo, onVender, toast }) {
+function ModuloVentas({ inventario, ventas, turnoActivo, onVender, onDeleteSale, toast }) {
   const [scanCode, setScanCode] = useState('')
   const [scanMsg, setScanMsg] = useState(null)
   const [showManual, setShowManual] = useState(false)
   const [showCamera, setShowCamera] = useState(false)
+  const [confirmDelVenta, setConfirmDelVenta] = useState(null)
   const scanRef = useRef()
 
   useEffect(() => { scanRef.current?.focus() }, [])
@@ -595,6 +596,7 @@ function ModuloVentas({ inventario, ventas, turnoActivo, onVender, toast }) {
             <span className="venta-hora">{formatHora(v.ts)}</span>
             <span className="venta-nombre">{v.nombre}</span>
             <span className="venta-precio">{fmt(v.precio)}</span>
+            <button className="btn btn-danger btn-sm" onClick={() => setConfirmDelVenta(v)}>🗑️</button>
           </div>
         ))}
       </div>
@@ -612,6 +614,22 @@ function ModuloVentas({ inventario, ventas, turnoActivo, onVender, toast }) {
           onScan={code => { setShowCamera(false); processCode(code) }}
           onClose={() => setShowCamera(false)}
         />
+      )}
+
+      {confirmDelVenta && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: 360 }}>
+            <div className="modal-title">🗑️ Eliminar venta</div>
+            <p>¿Eliminar la venta de <strong>{confirmDelVenta.nombre}</strong> ({fmt(confirmDelVenta.precio)})?</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 6 }}>
+              El stock del producto se restaurará en +1.
+            </p>
+            <div className="modal-actions">
+              <button className="btn btn-ghost" onClick={() => setConfirmDelVenta(null)}>Cancelar</button>
+              <button className="btn btn-danger" onClick={() => { onDeleteSale(confirmDelVenta); setConfirmDelVenta(null) }}>Eliminar</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -815,6 +833,14 @@ export default function App() {
     }
   }
 
+  async function eliminarVenta(venta) {
+    await api('DELETE', `/api/ventas/${venta.id}`)
+    await api('PATCH', `/api/inventario/${venta.codigo}/stock`, { delta: 1 })
+    setVentas(p => p.filter(v => v.id !== venta.id))
+    setInventario(p => p.map(x => x.codigo === venta.codigo ? { ...x, stock: x.stock + 1 } : x))
+    toast('Venta eliminada — stock restaurado', 'warning', '↩')
+  }
+
   async function onEditProduct(prod) {
     const updated = await api('PUT', `/api/inventario/${prod.codigo}`, prod)
     setInventario(p => p.map(x => x.codigo === updated.codigo ? updated : x))
@@ -888,6 +914,7 @@ export default function App() {
             ventas={ventas}
             turnoActivo={turnoActivo}
             onVender={registrarVenta}
+            onDeleteSale={eliminarVenta}
             toast={toast}
           />
         )}

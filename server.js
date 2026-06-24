@@ -78,6 +78,11 @@ app.post('/api/ventas', async (req, res) => {
   res.status(201).json({ ...rows[0], turnoId: rows[0].turno_id })
 })
 
+app.delete('/api/ventas/:id', async (req, res) => {
+  await pool.query('DELETE FROM ventas WHERE id=$1', [req.params.id])
+  res.status(204).end()
+})
+
 // ─── Turno activo ─────────────────────────────────────────────────────────────
 
 app.get('/api/turno-activo', async (req, res) => {
