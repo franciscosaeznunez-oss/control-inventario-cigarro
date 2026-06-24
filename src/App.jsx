@@ -334,17 +334,26 @@ function ModalCuadratura({ turno, ventas, onCerrar, onClose }) {
 
 function ModalScannerCamara({ onScan, onClose }) {
   const videoRef = useRef()
+  const onScanRef = useRef(onScan)
+  onScanRef.current = onScan
 
   useEffect(() => {
+    let stopped = false
     const reader = new BrowserMultiFormatReader()
-    reader.decodeFromVideoDevice(null, videoRef.current, (result, err) => {
-      if (result) {
-        reader.reset()
-        onScan(result.getText())
+
+    reader.decodeFromVideoDevice(undefined, videoRef.current, (result, err, controls) => {
+      if (result && !stopped) {
+        stopped = true
+        controls.stop()
+        onScanRef.current(result.getText())
       }
     }).catch(() => {})
-    return () => { try { reader.reset() } catch {} }
-  }, [onScan])
+
+    return () => {
+      stopped = true
+      try { reader.reset() } catch {}
+    }
+  }, [])
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
