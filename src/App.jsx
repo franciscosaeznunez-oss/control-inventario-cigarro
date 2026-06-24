@@ -3,6 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
 } from 'recharts'
 import './App.css'
+import { BrowserMultiFormatReader } from '@zxing/browser'
 
 // ─── Utils ───────────────────────────────────────────────────────────────────
 
@@ -329,6 +330,38 @@ function ModalCuadratura({ turno, ventas, onCerrar, onClose }) {
   )
 }
 
+// ─── Modal Scanner Cámara ─────────────────────────────────────────────────────
+
+function ModalScannerCamara({ onScan, onClose }) {
+  const videoRef = useRef()
+
+  useEffect(() => {
+    const reader = new BrowserMultiFormatReader()
+    reader.decodeFromVideoDevice(null, videoRef.current, (result, err) => {
+      if (result) {
+        reader.reset()
+        onScan(result.getText())
+      }
+    }).catch(() => {})
+    return () => { try { reader.reset() } catch {} }
+  }, [onScan])
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 380 }}>
+        <div className="modal-title">📷 Escanear código de barras</div>
+        <video ref={videoRef} style={{ width: '100%', borderRadius: 8, background: '#000', minHeight: 200 }} />
+        <p style={{ color: 'var(--text-muted)', fontSize: 12, textAlign: 'center', marginTop: 10 }}>
+          Apunta la cámara al código de barras
+        </p>
+        <div className="modal-actions">
+          <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Módulo Inventario ────────────────────────────────────────────────────────
 
 function ModuloInventario({ inventario, onScanInventario, onEditProduct, onDeleteProduct, toast }) {
@@ -336,6 +369,7 @@ function ModuloInventario({ inventario, onScanInventario, onEditProduct, onDelet
   const [buscar, setBuscar] = useState('')
   const [editando, setEditando] = useState(null)
   const [confirmDel, setConfirmDel] = useState(null)
+  const [showCamera, setShowCamera] = useState(false)
   const scanRef = useRef()
 
   useEffect(() => { scanRef.current?.focus() }, [])
@@ -371,6 +405,7 @@ function ModuloInventario({ inventario, onScanInventario, onEditProduct, onDelet
             autoComplete="off"
           />
           <button type="submit" className="btn btn-primary">Procesar</button>
+          <button type="button" className="btn btn-ghost" onClick={() => setShowCamera(true)}>📷 Cámara</button>
         </form>
       </div>
 
@@ -445,6 +480,13 @@ function ModuloInventario({ inventario, onScanInventario, onEditProduct, onDelet
           </div>
         </div>
       )}
+
+      {showCamera && (
+        <ModalScannerCamara
+          onScan={code => { onScanInventario(code); setShowCamera(false) }}
+          onClose={() => setShowCamera(false)}
+        />
+      )}
     </div>
   )
 }
@@ -455,6 +497,7 @@ function ModuloVentas({ inventario, ventas, turnoActivo, onVender, toast }) {
   const [scanCode, setScanCode] = useState('')
   const [scanMsg, setScanMsg] = useState(null)
   const [showManual, setShowManual] = useState(false)
+  const [showCamera, setShowCamera] = useState(false)
   const scanRef = useRef()
 
   useEffect(() => { scanRef.current?.focus() }, [])
@@ -463,12 +506,7 @@ function ModuloVentas({ inventario, ventas, turnoActivo, onVender, toast }) {
   const totalTurno = ventasTurno.reduce((s, v) => s + v.precio, 0)
   const recientes = [...ventasTurno].reverse().slice(0, 15)
 
-  function handleScan(e) {
-    e.preventDefault()
-    const code = scanCode.trim()
-    if (!code) return
-    setScanCode('')
-
+  function processCode(code) {
     if (!turnoActivo) {
       setScanMsg({ type: 'error', text: 'No hay turno activo. Abre un turno primero.' })
       return
@@ -492,6 +530,14 @@ function ModuloVentas({ inventario, ventas, turnoActivo, onVender, toast }) {
     setTimeout(() => { setScanMsg(null); scanRef.current?.focus() }, 1500)
   }
 
+  function handleScan(e) {
+    e.preventDefault()
+    const code = scanCode.trim()
+    if (!code) return
+    setScanCode('')
+    processCode(code)
+  }
+
   return (
     <div>
       <div className="scanner-box">
@@ -513,6 +559,7 @@ function ModuloVentas({ inventario, ventas, turnoActivo, onVender, toast }) {
           />
           <button type="submit" className="btn btn-success" disabled={!turnoActivo}>Vender</button>
           <button type="button" className="btn btn-ghost" onClick={() => setShowManual(true)} disabled={!turnoActivo}>Manual</button>
+          <button type="button" className="btn btn-ghost" onClick={() => setShowCamera(true)} disabled={!turnoActivo}>📷 Cámara</button>
         </form>
         {scanMsg && <div className={`scan-feedback ${scanMsg.type}`}>{scanMsg.text}</div>}
       </div>
@@ -548,6 +595,13 @@ function ModuloVentas({ inventario, ventas, turnoActivo, onVender, toast }) {
           inventario={inventario.filter(p => p.stock > 0)}
           onVender={prod => { onVender(prod); toast(`Vendido: ${prod.nombre}`, 'success', '✓') }}
           onClose={() => { setShowManual(false); setTimeout(() => scanRef.current?.focus(), 100) }}
+        />
+      )}
+
+      {showCamera && (
+        <ModalScannerCamara
+          onScan={code => { setShowCamera(false); processCode(code) }}
+          onClose={() => setShowCamera(false)}
         />
       )}
     </div>
