@@ -70,10 +70,10 @@ app.get('/api/ventas', async (req, res) => {
 })
 
 app.post('/api/ventas', async (req, res) => {
-  const { id, ts, codigo, nombre, precio, costo, turno, turnoId } = req.body
+  const { id, ts, codigo, nombre, precio, costo, cantidad, turno, turnoId } = req.body
   const { rows } = await pool.query(
-    'INSERT INTO ventas (id, ts, codigo, nombre, precio, costo, turno, turno_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
-    [id, ts, codigo, nombre, precio, costo, turno, turnoId]
+    'INSERT INTO ventas (id, ts, codigo, nombre, precio, costo, cantidad, turno, turno_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',
+    [id, ts, codigo, nombre, precio, costo, cantidad || 1, turno, turnoId]
   )
   res.status(201).json({ ...rows[0], turnoId: rows[0].turno_id })
 })

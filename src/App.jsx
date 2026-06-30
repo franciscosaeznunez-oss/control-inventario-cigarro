@@ -246,16 +246,16 @@ function ModalVentaManual({ inventario, onVender, onClose }) {
 
 function ModalCuadratura({ turno, ventas, onCerrar, onClose }) {
   const ventasTurno = ventas.filter(v => v.turnoId === turno.id)
-  const totalUnidades = ventasTurno.length
-  const totalDinero = ventasTurno.reduce((s, v) => s + v.precio, 0)
-  const totalCosto = ventasTurno.reduce((s, v) => s + (v.costo || 0), 0)
+  const totalUnidades = ventasTurno.reduce((s, v) => s + (v.cantidad || 1), 0)
+  const totalDinero = ventasTurno.reduce((s, v) => s + v.precio * (v.cantidad || 1), 0)
+  const totalCosto = ventasTurno.reduce((s, v) => s + (v.costo || 0) * (v.cantidad || 1), 0)
   const margen = totalDinero - totalCosto
 
   const porProducto = {}
   ventasTurno.forEach(v => {
     if (!porProducto[v.codigo]) porProducto[v.codigo] = { nombre: v.nombre, unidades: 0, total: 0 }
-    porProducto[v.codigo].unidades++
-    porProducto[v.codigo].total += v.precio
+    porProducto[v.codigo].unidades += (v.cantidad || 1)
+    porProducto[v.codigo].total += v.precio * (v.cantidad || 1)
   })
 
   const turnoNombre = turno.tipo === 'manana' ? '🌅 Turno Mañana' : '🌆 Turno Tarde'
@@ -502,7 +502,8 @@ function ModuloInventario({ inventario, onScanInventario, onEditProduct, onDelet
 
 // ─── Módulo Ventas ────────────────────────────────────────────────────────────
 
-function ModuloVentas({ inventario, ventas, turnoActivo, onVender, onDeleteSale, toast }) {
+function ModuloVentas({ inventario, ventas, turnoActivo, onVenderCarrito, onDeleteSale, toast }) {
+  const [carrito, setCarrito] = useState([])
   const [scanCode, setScanCode] = useState('')
   const [scanMsg, setScanMsg] = useState(null)
   const [showManual, setShowManual] = useState(false)
@@ -513,31 +514,48 @@ function ModuloVentas({ inventario, ventas, turnoActivo, onVender, onDeleteSale,
   useEffect(() => { scanRef.current?.focus() }, [])
 
   const ventasTurno = turnoActivo ? ventas.filter(v => v.turnoId === turnoActivo.id) : []
-  const totalTurno = ventasTurno.reduce((s, v) => s + v.precio, 0)
+  const totalTurno = ventasTurno.reduce((s, v) => s + v.precio * (v.cantidad || 1), 0)
+  const unidadesTourno = ventasTurno.reduce((s, v) => s + (v.cantidad || 1), 0)
   const recientes = [...ventasTurno].reverse().slice(0, 15)
+  const totalCarrito = carrito.reduce((s, i) => s + i.precio * i.cantidad, 0)
+  const unidadesCarrito = carrito.reduce((s, i) => s + i.cantidad, 0)
+
+  function addToCarrito(prod) {
+    setCarrito(prev => {
+      const existing = prev.find(i => i.codigo === prod.codigo)
+      if (existing) {
+        return prev.map(i => i.codigo === prod.codigo ? { ...i, cantidad: i.cantidad + 1 } : i)
+      }
+      return [...prev, { ...prod, cantidad: 1 }]
+    })
+  }
+
+  function updateCantidad(codigo, delta) {
+    setCarrito(prev =>
+      prev.map(i => i.codigo === codigo ? { ...i, cantidad: i.cantidad + delta } : i)
+          .filter(i => i.cantidad > 0)
+    )
+  }
 
   function processCode(code) {
     if (!turnoActivo) {
       setScanMsg({ type: 'error', text: 'No hay turno activo. Abre un turno primero.' })
       return
     }
-
     const prod = inventario.find(p => p.codigo === code)
     if (!prod) {
-      setScanMsg({ type: 'error', text: `Código ${code} no encontrado en inventario` })
+      setScanMsg({ type: 'error', text: `Código ${code} no encontrado` })
       setTimeout(() => { setScanMsg(null); scanRef.current?.focus() }, 3000)
       return
     }
-
     if (prod.stock <= 0) {
-      setScanMsg({ type: 'warning', text: `⚠️ QUIEBRE DE STOCK: ${prod.nombre}` })
+      setScanMsg({ type: 'warning', text: `⚠️ QUIEBRE: ${prod.nombre} sin stock` })
       setTimeout(() => { setScanMsg(null); scanRef.current?.focus() }, 3000)
       return
     }
-
-    onVender(prod)
-    setScanMsg({ type: 'success', text: `✓ Vendido: ${prod.nombre} — ${fmt(prod.venta)}` })
-    setTimeout(() => { setScanMsg(null); scanRef.current?.focus() }, 1500)
+    addToCarrito(prod)
+    setScanMsg({ type: 'success', text: `✓ Agregado: ${prod.nombre}` })
+    setTimeout(() => { setScanMsg(null); scanRef.current?.focus() }, 1200)
   }
 
   function handleScan(e) {
@@ -548,10 +566,25 @@ function ModuloVentas({ inventario, ventas, turnoActivo, onVender, onDeleteSale,
     processCode(code)
   }
 
+  async function confirmarVenta() {
+    if (carrito.length === 0) return
+    for (const item of carrito) {
+      const prod = inventario.find(p => p.codigo === item.codigo)
+      if (!prod || prod.stock < item.cantidad) {
+        setScanMsg({ type: 'error', text: `Stock insuficiente: ${item.nombre} (disponible: ${prod?.stock || 0})` })
+        return
+      }
+    }
+    const carritoActual = [...carrito]
+    setCarrito([])
+    await onVenderCarrito(carritoActual)
+    setTimeout(() => scanRef.current?.focus(), 100)
+  }
+
   return (
     <div>
       <div className="scanner-box">
-        <h2>🛒 Lector de código de barras — Ventas</h2>
+        <h2>🛒 Agregar productos al carrito</h2>
         {!turnoActivo && (
           <div className="scan-feedback error" style={{ marginBottom: 10 }}>
             ⚠️ No hay turno activo. Abre un turno para registrar ventas.
@@ -563,26 +596,49 @@ function ModuloVentas({ inventario, ventas, turnoActivo, onVender, onDeleteSale,
             className="scanner-input"
             value={scanCode}
             onChange={e => setScanCode(e.target.value)}
-            placeholder="Escanea el código de barras..."
+            placeholder="Escanea o escribe el código..."
             autoComplete="off"
             disabled={!turnoActivo}
           />
-          <button type="submit" className="btn btn-success" disabled={!turnoActivo}>Vender</button>
+          <button type="submit" className="btn btn-primary" disabled={!turnoActivo}>Agregar</button>
           <button type="button" className="btn btn-ghost" onClick={() => setShowManual(true)} disabled={!turnoActivo}>Manual</button>
           <button type="button" className="btn btn-ghost" onClick={() => setShowCamera(true)} disabled={!turnoActivo}>📷 Cámara</button>
         </form>
         {scanMsg && <div className={`scan-feedback ${scanMsg.type}`}>{scanMsg.text}</div>}
       </div>
 
-      <div className="grid-4 mb-4">
-        <div className="card"><div className="card-title">Ventas del turno</div><div className="card-value text-blue">{ventasTurno.length}</div></div>
-        <div className="card"><div className="card-title">Recaudado</div><div className="card-value" style={{ fontSize: 18, color: 'var(--green)' }}>{fmt(totalTurno)}</div></div>
-        <div className="card">
-          <div className="card-title">Ticket promedio</div>
-          <div className="card-value" style={{ fontSize: 18 }}>
-            {ventasTurno.length ? fmt(Math.round(totalTurno / ventasTurno.length)) : fmt(0)}
+      {carrito.length > 0 && (
+        <div className="card mb-4">
+          <div className="section-header">
+            <div className="section-title">🛍️ Carrito · {unidadesCarrito} {unidadesCarrito === 1 ? 'artículo' : 'artículos'}</div>
+            <button className="btn btn-ghost btn-sm" onClick={() => setCarrito([])}>Vaciar</button>
           </div>
+          {carrito.map(item => (
+            <div key={item.codigo} className="carrito-item">
+              <span className="carrito-nombre">{item.nombre}</span>
+              <div className="carrito-controls">
+                <button className="btn btn-ghost btn-sm" onClick={() => updateCantidad(item.codigo, -1)}>−</button>
+                <span className="carrito-cantidad">{item.cantidad}</span>
+                <button className="btn btn-ghost btn-sm" onClick={() => updateCantidad(item.codigo, 1)}>+</button>
+              </div>
+              <span className="carrito-precio">{fmt(item.precio * item.cantidad)}</span>
+              <button className="btn btn-danger btn-sm" onClick={() => updateCantidad(item.codigo, -item.cantidad)}>✕</button>
+            </div>
+          ))}
+          <div className="carrito-total">
+            <span className="text-muted">Total</span>
+            <span className="fw-bold" style={{ fontSize: 22, color: 'var(--green)' }}>{fmt(totalCarrito)}</span>
+          </div>
+          <button className="btn btn-success btn-lg" style={{ width: '100%', marginTop: 14 }} onClick={confirmarVenta}>
+            ✓ Confirmar venta · {fmt(totalCarrito)}
+          </button>
         </div>
+      )}
+
+      <div className="grid-4 mb-4">
+        <div className="card"><div className="card-title">Transacciones</div><div className="card-value text-blue">{ventasTurno.length}</div></div>
+        <div className="card"><div className="card-title">Recaudado</div><div className="card-value" style={{ fontSize: 18, color: 'var(--green)' }}>{fmt(totalTurno)}</div></div>
+        <div className="card"><div className="card-title">Unidades</div><div className="card-value">{unidadesTourno}</div></div>
         <div className="card"><div className="card-title">Sin stock</div><div className="card-value red">{inventario.filter(p => p.stock === 0).length}</div></div>
       </div>
 
@@ -594,8 +650,8 @@ function ModuloVentas({ inventario, ventas, turnoActivo, onVender, onDeleteSale,
         {recientes.map(v => (
           <div key={v.id} className="venta-item">
             <span className="venta-hora">{formatHora(v.ts)}</span>
-            <span className="venta-nombre">{v.nombre}</span>
-            <span className="venta-precio">{fmt(v.precio)}</span>
+            <span className="venta-nombre">{v.nombre}{(v.cantidad || 1) > 1 ? ` ×${v.cantidad}` : ''}</span>
+            <span className="venta-precio">{fmt(v.precio * (v.cantidad || 1))}</span>
             <button className="btn btn-danger btn-sm" onClick={() => setConfirmDelVenta(v)}>🗑️</button>
           </div>
         ))}
@@ -604,7 +660,7 @@ function ModuloVentas({ inventario, ventas, turnoActivo, onVender, onDeleteSale,
       {showManual && (
         <ModalVentaManual
           inventario={inventario.filter(p => p.stock > 0)}
-          onVender={prod => { onVender(prod); toast(`Vendido: ${prod.nombre}`, 'success', '✓') }}
+          onVender={prod => { addToCarrito(prod); setShowManual(false); setTimeout(() => scanRef.current?.focus(), 100) }}
           onClose={() => { setShowManual(false); setTimeout(() => scanRef.current?.focus(), 100) }}
         />
       )}
@@ -620,9 +676,9 @@ function ModuloVentas({ inventario, ventas, turnoActivo, onVender, onDeleteSale,
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 360 }}>
             <div className="modal-title">🗑️ Eliminar venta</div>
-            <p>¿Eliminar la venta de <strong>{confirmDelVenta.nombre}</strong> ({fmt(confirmDelVenta.precio)})?</p>
+            <p>¿Eliminar <strong>{confirmDelVenta.nombre}</strong>{(confirmDelVenta.cantidad || 1) > 1 ? ` ×${confirmDelVenta.cantidad}` : ''} ({fmt(confirmDelVenta.precio * (confirmDelVenta.cantidad || 1))})?</p>
             <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 6 }}>
-              El stock del producto se restaurará en +1.
+              El stock se restaurará en +{confirmDelVenta.cantidad || 1}.
             </p>
             <div className="modal-actions">
               <button className="btn btn-ghost" onClick={() => setConfirmDelVenta(null)}>Cancelar</button>
@@ -652,10 +708,10 @@ function ModuloHistorial({ ventas }) {
     const key = `${formatFecha(v.ts)} ${v.turno === 'manana' ? 'Mañana' : 'Tarde'}`
     if (!porTurno[key]) porTurno[key] = { name: key, ventas: 0, total: 0 }
     porTurno[key].ventas++
-    porTurno[key].total += v.precio
+    porTurno[key].total += v.precio * (v.cantidad || 1)
   })
   const chartData = Object.values(porTurno).slice(-14)
-  const totalFiltrado = filtered.reduce((s, v) => s + v.precio, 0)
+  const totalFiltrado = filtered.reduce((s, v) => s + v.precio * (v.cantidad || 1), 0)
 
   return (
     <div>
@@ -812,33 +868,39 @@ export default function App() {
     toast(`+${cantidad} unidades a "${producto.nombre}"`, 'success', '✓')
   }
 
-  async function registrarVenta(prod) {
+  async function registrarCarrito(carrito) {
     if (!turnoActivo) return
-    const venta = {
-      id: `${ts()}-${Math.random().toString(36).slice(2, 6)}`,
-      ts: ts(),
-      codigo: prod.codigo,
-      nombre: prod.nombre,
-      precio: prod.venta,
-      costo: prod.costo,
-      turno: turnoActivo.tipo,
-      turnoId: turnoActivo.id,
+    for (const item of carrito) {
+      const venta = {
+        id: `${ts()}-${Math.random().toString(36).slice(2, 6)}`,
+        ts: ts(),
+        codigo: item.codigo,
+        nombre: item.nombre,
+        precio: item.precio,
+        costo: item.costo,
+        cantidad: item.cantidad,
+        turno: turnoActivo.tipo,
+        turnoId: turnoActivo.id,
+      }
+      await api('POST', '/api/ventas', venta)
+      const updated = await api('PATCH', `/api/inventario/${item.codigo}/stock`, { delta: -item.cantidad })
+      setVentas(p => [...p, venta])
+      setInventario(p => p.map(x => x.codigo === updated.codigo ? updated : x))
+      if (updated.stock === 0) {
+        toast(`⚠️ QUIEBRE: ${item.nombre} sin stock`, 'error', '⚠️')
+      }
     }
-    await api('POST', '/api/ventas', venta)
-    const updated = await api('PATCH', `/api/inventario/${prod.codigo}/stock`, { delta: -1 })
-    setVentas(p => [...p, venta])
-    setInventario(p => p.map(x => x.codigo === updated.codigo ? updated : x))
-    if (updated.stock === 0) {
-      toast(`⚠️ QUIEBRE: ${prod.nombre} sin stock`, 'error', '⚠️')
-    }
+    const total = carrito.reduce((s, i) => s + i.precio * i.cantidad, 0)
+    toast(`Venta registrada · ${fmt(total)}`, 'success', '✓')
   }
 
   async function eliminarVenta(venta) {
     await api('DELETE', `/api/ventas/${venta.id}`)
-    await api('PATCH', `/api/inventario/${venta.codigo}/stock`, { delta: 1 })
+    const cantidad = venta.cantidad || 1
+    await api('PATCH', `/api/inventario/${venta.codigo}/stock`, { delta: cantidad })
     setVentas(p => p.filter(v => v.id !== venta.id))
-    setInventario(p => p.map(x => x.codigo === venta.codigo ? { ...x, stock: x.stock + 1 } : x))
-    toast('Venta eliminada — stock restaurado', 'warning', '↩')
+    setInventario(p => p.map(x => x.codigo === venta.codigo ? { ...x, stock: x.stock + cantidad } : x))
+    toast(`Venta eliminada — stock +${cantidad}`, 'warning', '↩')
   }
 
   async function onEditProduct(prod) {
@@ -874,7 +936,7 @@ export default function App() {
 
       <header className="header">
         <div className="header-left">
-          <div className="logo">🚬 <span>Control</span> Cigarro</div>
+          <div className="logo">🏪 <span>STORCOIN</span></div>
           <div className={`turno-badge ${turnoClass}`}>
             <span className="dot" />
             {turnoLabel}
@@ -913,7 +975,7 @@ export default function App() {
             inventario={inventario}
             ventas={ventas}
             turnoActivo={turnoActivo}
-            onVender={registrarVenta}
+            onVenderCarrito={registrarCarrito}
             onDeleteSale={eliminarVenta}
             toast={toast}
           />
